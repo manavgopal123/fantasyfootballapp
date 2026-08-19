@@ -66,6 +66,14 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
           >
             View rules
           </Link>
+          {isMember && (
+            <Link
+              href={`/leagues/${league.id}/trades`}
+              className="text-xs font-medium text-green-700 dark:text-green-400"
+            >
+              Trades
+            </Link>
+          )}
         </div>
       </div>
 

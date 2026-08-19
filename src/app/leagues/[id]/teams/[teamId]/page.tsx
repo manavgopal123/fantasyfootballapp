@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { RosterManager } from "@/components/roster-manager";
+import { FreeAgency } from "@/components/free-agency";
 import { getCurrentWeek, isPlayerLocked } from "@/lib/lock";
+import { totalRosterSize, RosterSlotsConfig } from "@/lib/roster-config";
 
 export default async function TeamRosterPage({
   params,
@@ -68,6 +70,23 @@ export default async function TeamRosterPage({
           }))}
           canEdit={canEdit}
         />
+      )}
+
+      {canEdit && (
+        <>
+          <h2 className="mt-8 mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">Free agents</h2>
+          <FreeAgency
+            leagueId={id}
+            teamId={teamId}
+            rosterFull={team.roster.length >= totalRosterSize(team.league.rosterSlots as RosterSlotsConfig)}
+            dropOptions={team.roster
+              .filter((r) => !(lockByPlayerId.get(r.playerId) ?? false))
+              .map((r) => ({
+                playerId: r.playerId,
+                label: `${r.player.firstName} ${r.player.lastName} (${r.slot})`,
+              }))}
+          />
+        </>
       )}
     </div>
   );

@@ -50,6 +50,13 @@ enum TransactionStatus {
   REJECTED
 }
 
+enum TradeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -87,6 +94,7 @@ model League {
   matchups   Matchup[]
   draftPicks DraftPick[]
   transactions Transaction[]
+  trades     Trade[]
 }
 
 model LeagueMember {
@@ -115,6 +123,9 @@ model Team {
   homeMatchups  Matchup[]     @relation("HomeTeam")
   awayMatchups  Matchup[]     @relation("AwayTeam")
   transactions  Transaction[]
+  proposedTrades Trade[]      @relation("ProposingTeam")
+  receivedTrades Trade[]      @relation("ReceivingTeam")
+  tradeItemsGiven TradeItem[]
 
   @@unique([leagueId, ownerId])
 }
@@ -134,6 +145,7 @@ model Player {
   weekStats     PlayerWeekStats[]
   draftPicks    DraftPick[]
   weeklyLineups WeeklyLineup[]
+  tradeItems    TradeItem[]
 }
 
 model RosterEntry {
@@ -236,4 +248,36 @@ model Transaction {
   faabBid       Int?
   createdAt     DateTime          @default(now())
   resolvedAt    DateTime?
+}
+
+// A proposed player-for-player trade between two teams in the same league.
+// Direct accept/reject, no league vote or commissioner approval step —
+// see src/app/api/leagues/[id]/trades for the execution logic.
+model Trade {
+  id     String @id @default(cuid())
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId String
+
+  proposingTeam   Team   @relation("ProposingTeam", fields: [proposingTeamId], references: [id])
+  proposingTeamId String
+  receivingTeam   Team   @relation("ReceivingTeam", fields: [receivingTeamId], references: [id])
+  receivingTeamId String
+
+  status     TradeStatus @default(PENDING)
+  createdAt  DateTime    @default(now())
+  resolvedAt DateTime?
+
+  items TradeItem[]
+}
+
+// One player moving in a trade, tagged with which team is giving it up so
+// a single Trade can bundle an arbitrary N-for-M swap.
+model TradeItem {
+  id       String @id @default(cuid())
+  trade    Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  tradeId  String
+  player   Player @relation(fields: [playerId], references: [id])
+  playerId String
+  fromTeam Team   @relation(fields: [fromTeamId], references: [id])
+  fromTeamId String
 }

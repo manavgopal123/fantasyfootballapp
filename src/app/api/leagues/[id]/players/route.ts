@@ -7,15 +7,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const search = searchParams.get("search")?.trim() ?? "";
   const position = searchParams.get("position") ?? undefined;
 
-  const drafted = await db.draftPick.findMany({
-    where: { leagueId, playerId: { not: null } },
+  // Excludes anyone currently on a roster in this league — not just ever
+  // drafted, since a dropped player should reappear as a free agent.
+  const rostered = await db.rosterEntry.findMany({
+    where: { team: { leagueId } },
     select: { playerId: true },
   });
-  const draftedIds = drafted.map((d) => d.playerId as string);
+  const rosteredIds = rostered.map((r) => r.playerId);
 
   const players = await db.player.findMany({
     where: {
-      id: { notIn: draftedIds.length ? draftedIds : undefined },
+      id: { notIn: rosteredIds.length ? rosteredIds : undefined },
       ...(position ? { position } : {}),
       ...(search
         ? {

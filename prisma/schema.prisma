@@ -1,0 +1,239 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum StandingsFormat {
+  HEAD_TO_HEAD       // scheduled weekly matchups, win/loss record
+  ALL_PLAY           // every team plays every other team each week
+  TOTAL_POINTS       // pure cumulative points leaderboard, no matchups
+  HEAD_TO_HEAD_MEDIAN // normal H2H + bonus win/loss vs league median score
+}
+
+enum LeagueStatus {
+  SETUP      // being configured, members joining
+  DRAFTING   // draft in progress
+  ACTIVE     // season underway
+  COMPLETE   // season over
+}
+
+enum RosterSlot {
+  QB
+  RB
+  WR
+  TE
+  FLEX
+  SUPERFLEX
+  DST
+  K
+  BENCH
+  IR
+}
+
+enum TransactionType {
+  ADD
+  DROP
+  TRADE
+  WAIVER_CLAIM
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETE
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  commissionedLeagues League[]      @relation("Commissioner")
+  memberships         LeagueMember[]
+  teams               Team[]
+}
+
+model League {
+  id              String          @id @default(cuid())
+  name            String
+  season          Int
+  status          LeagueStatus    @default(SETUP)
+  standingsFormat StandingsFormat @default(HEAD_TO_HEAD)
+  scoringSettings Json            // flexible scoring rule set, see src/lib/scoring/types.ts
+  rosterSlots     Json            // starting lineup + bench construction, see src/lib/roster-config.ts
+  playoffTeams    Int             @default(0) // 0 = no bracket, use final standings
+  regularSeasonWeeks Int          @default(14)
+  // Fallback lineup-lock rule, used only when we don't have a real kickoff
+  // time for a player's NFL team (see src/lib/lock.ts). Day is JS
+  // Date.getDay() convention (0=Sun..6=Sat); default is Thursday 8pm ET.
+  lockDayOfWeek   Int             @default(4)
+  lockHour        Int             @default(20)
+  createdAt       DateTime        @default(now())
+
+  commissioner   User   @relation("Commissioner", fields: [commissionerId], references: [id])
+  commissionerId String
+
+  members    LeagueMember[]
+  teams      Team[]
+  matchups   Matchup[]
+  draftPicks DraftPick[]
+  transactions Transaction[]
+}
+
+model LeagueMember {
+  id       String @id @default(cuid())
+  league   League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId String
+  user     User   @relation(fields: [userId], references: [id])
+  userId   String
+  joinedAt DateTime @default(now())
+
+  @@unique([leagueId, userId])
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId  String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  roster        RosterEntry[]
+  weeklyLineups WeeklyLineup[]
+  draftPicks    DraftPick[]
+  homeMatchups  Matchup[]     @relation("HomeTeam")
+  awayMatchups  Matchup[]     @relation("AwayTeam")
+  transactions  Transaction[]
+
+  @@unique([leagueId, ownerId])
+}
+
+model Player {
+  id          String  @id // Sleeper player id
+  firstName   String
+  lastName    String
+  position    String
+  nflTeam     String?
+  status      String? // Active, Injured Reserve, etc.
+  injuryStatus String?
+  searchRank  Int?    // Sleeper's rough popularity/ADP rank; lower = more relevant
+  updatedAt   DateTime @updatedAt
+
+  rosterEntries RosterEntry[]
+  weekStats     PlayerWeekStats[]
+  draftPicks    DraftPick[]
+  weeklyLineups WeeklyLineup[]
+}
+
+model RosterEntry {
+  id       String     @id @default(cuid())
+  team     Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId   String
+  player   Player     @relation(fields: [playerId], references: [id])
+  playerId String
+  slot     RosterSlot
+  addedAt  DateTime   @default(now())
+
+  @@unique([teamId, playerId])
+}
+
+// Locks in which player occupied which starting slot for a team in a given
+// week. Created once, the first time that week is scored (see
+// src/lib/scoring/team-score.ts) — after that, editing the live roster no
+// longer changes an already-scored week's lineup or points.
+model WeeklyLineup {
+  id       String     @id @default(cuid())
+  team     Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId   String
+  week     Int
+  player   Player     @relation(fields: [playerId], references: [id])
+  playerId String
+  slot     RosterSlot
+
+  @@unique([teamId, week, playerId])
+}
+
+// Real per-team kickoff times, synced from ESPN's public schedule endpoint
+// (see src/lib/schedule-sync.ts). Used to lock an individual player's roster
+// slot the moment their own team's game starts, rather than the whole
+// roster at once.
+model TeamGameTime {
+  id        String   @id @default(cuid())
+  season    Int
+  week      Int
+  nflTeam   String
+  kickoffAt DateTime
+
+  @@unique([season, week, nflTeam])
+}
+
+model PlayerWeekStats {
+  id       String @id @default(cuid())
+  player   Player @relation(fields: [playerId], references: [id])
+  playerId String
+  season   Int
+  week     Int
+  stats    Json   // raw stat line from Sleeper (rec, rush_yd, pass_td, etc.)
+  isFinal  Boolean @default(false) // false while game is live/in-progress
+
+  @@unique([playerId, season, week])
+}
+
+model Matchup {
+  id         String  @id @default(cuid())
+  league     League  @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId   String
+  week       Int
+  homeTeam   Team    @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  homeTeamId String
+  awayTeam   Team?   @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  awayTeamId String? // null = bye week
+  homeScore  Float   @default(0)
+  awayScore  Float   @default(0)
+  played     Boolean @default(false) // false until the weekly scoring job fills in real scores
+  medianResult String? // "WIN" | "LOSS" for HEAD_TO_HEAD_MEDIAN bonus game, else null
+  isPlayoffs Boolean @default(false)
+
+  @@unique([leagueId, week, homeTeamId, awayTeamId])
+}
+
+model DraftPick {
+  id       String   @id @default(cuid())
+  league   League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId String
+  round    Int
+  pickNo   Int // overall pick number
+  team     Team     @relation(fields: [teamId], references: [id])
+  teamId   String
+  player   Player?  @relation(fields: [playerId], references: [id])
+  playerId String?
+  pickedAt DateTime?
+
+  @@unique([leagueId, pickNo])
+}
+
+model Transaction {
+  id            String            @id @default(cuid())
+  league        League            @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueId      String
+  team          Team              @relation(fields: [teamId], references: [id])
+  teamId        String
+  type          TransactionType
+  status        TransactionStatus @default(PENDING)
+  playerId      String?
+  droppedPlayerId String?
+  faabBid       Int?
+  createdAt     DateTime          @default(now())
+  resolvedAt    DateTime?
+}

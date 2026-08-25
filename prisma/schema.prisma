@@ -6,8 +6,11 @@ generator client {
   output   = "../src/generated/prisma"
 }
 
+// Connection URLs live in prisma.config.ts (CLI/migrations) and
+// src/lib/db.ts (runtime client adapter), not here — Prisma 7 no longer
+// supports `url`/`directUrl` directly in the schema file.
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum StandingsFormat {

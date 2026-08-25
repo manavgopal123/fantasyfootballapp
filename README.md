@@ -16,15 +16,18 @@ A custom fantasy football platform built for a small private league — PWA, rea
 ## Tech stack
 
 - Next.js (App Router) + TypeScript, Tailwind CSS
-- Prisma + SQLite (local dev)
+- Prisma + Postgres ([Supabase](https://supabase.com))
 - NextAuth (Credentials provider, JWT sessions)
+- Deployed on [Vercel](https://vercel.com)
 - Data sources: [Sleeper's public API](https://docs.sleeper.com/) (players, stats) and ESPN's public scoreboard endpoint (game kickoff times) — both free, no API key required
 
 ## Getting started
 
+Needs a Supabase project — from its dashboard under Project Settings → Database, grab both the **Transaction pooler** connection string (`DATABASE_URL`) and the **direct** connection string (`DIRECT_URL`); see the comments in `.env.example` for why both are needed.
+
 ```bash
 npm install
-cp .env.example .env   # then fill in AUTH_SECRET (see comment in the file)
+cp .env.example .env   # then fill in DATABASE_URL, DIRECT_URL, and AUTH_SECRET
 npx prisma migrate dev
 npm run dev
 ```

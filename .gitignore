@@ -43,10 +43,6 @@ next-env.d.ts
 
 /src/generated/prisma
 
-# database
-/dev.db
-/dev.db-journal
-
 # auto-generated Prisma CLI skill docs (vendor reference material, not project code)
 /.agents
 /.claude

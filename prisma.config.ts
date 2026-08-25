@@ -9,6 +9,9 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // CLI commands (migrate, studio) use the direct connection — migrations
+    // and advisory locks don't work reliably through a transaction-mode
+    // pooler like Supabase's Supavisor.
+    url: process.env["DIRECT_URL"],
   },
 });

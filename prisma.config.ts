@@ -9,9 +9,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // CLI commands (migrate, studio) use the direct connection — migrations
-    // and advisory locks don't work reliably through a transaction-mode
-    // pooler like Supabase's Supavisor.
+    // CLI commands (migrate, studio) use the Session pooler connection —
+    // see the DIRECT_URL comment in .env.example for why (transaction-mode
+    // pooling breaks migrations; Supabase's true direct host is IPv6-only
+    // and unreachable from Vercel).
     url: process.env["DIRECT_URL"],
   },
 });

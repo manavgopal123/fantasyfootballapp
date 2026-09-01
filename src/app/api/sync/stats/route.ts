@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { syncWeekStats } from "@/lib/sleeper/sync";
 import { fetchNflState } from "@/lib/sleeper/client";
+import { isSyncAuthorized } from "@/lib/sync-auth";
 
 export async function POST(req: Request) {
+  if (!(await isSyncAuthorized(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const body = await req.json().catch(() => ({}));
   let { season, week } = body as { season?: number; week?: number };
 

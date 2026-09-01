@@ -2,16 +2,19 @@
 
 A custom fantasy football platform built for a small private league — PWA, real NFL data, no third-party fantasy service required.
 
+**Live:** [fantasyfootballappleague.vercel.app](https://fantasyfootballappleague.vercel.app)
+
 ## Features
 
 - Email/password accounts, private leagues joined via invite link
 - Configurable scoring settings and standings format (Head-to-Head, Head-to-Head + Median, All-Play, Total Points)
 - Live-polling snake draft room, with a player pool pulled from Sleeper's API
 - Auto-generated season schedule (round-robin for H2H formats)
-- Real weekly scoring from Sleeper's live/final stat feed
+- Real weekly scoring from Sleeper's live/final stat feed, kept fresh automatically by a daily Vercel Cron job
 - Per-player lineup locking, using real kickoff times from ESPN's public schedule (falls back to a commissioner-configurable day/time when kickoff data isn't available)
 - Instant first-come-first-served free agency (add/drop)
 - Player trades with propose/accept/reject/cancel
+- Installable as a home-screen PWA on iOS/Android
 
 ## Tech stack
 
@@ -27,20 +30,20 @@ Needs a Supabase project — from its dashboard under Project Settings → Datab
 
 ```bash
 npm install
-cp .env.example .env   # then fill in DATABASE_URL, DIRECT_URL, and AUTH_SECRET
+cp .env.example .env   # then fill in DATABASE_URL, DIRECT_URL, AUTH_SECRET, and CRON_SECRET
 npx prisma migrate dev
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Player and stat data isn't included — sync it after starting the dev server:
+Player and stat data isn't included — sync it after starting the dev server (the sync routes require either a signed-in session or the `CRON_SECRET` bearer token):
 
 ```bash
-curl -X POST http://localhost:3000/api/sync/players
+curl -X POST http://localhost:3000/api/sync/players -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-Weekly stats, schedule data, and score computation are triggered from the league dashboard (commissioner) or via `/api/sync/stats`, `/api/sync/schedule`, and `/api/sync/compute-week`.
+Weekly stats, schedule data, and score computation are triggered from the league dashboard (commissioner), a daily cron job (`src/app/api/cron/sync`, configured in `vercel.json`), or manually via `/api/sync/stats`, `/api/sync/schedule`, and `/api/sync/compute-week`.
 
 ## Project structure
 

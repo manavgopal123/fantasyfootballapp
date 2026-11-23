@@ -62,18 +62,32 @@ export async function POST(
         );
       }
     }
-  } else {
-    const rosterCount = await db.rosterEntry.count({ where: { teamId } });
-    const cap = totalRosterSize(league.rosterSlots as RosterSlotsConfig);
-    if (rosterCount >= cap) {
-      return NextResponse.json({ error: "Your roster is full — pick a player to drop" }, { status: 400 });
-    }
   }
 
-  await db.$transaction([
-    ...(dropEntry ? [db.rosterEntry.delete({ where: { id: dropEntry.id } })] : []),
-    db.rosterEntry.create({ data: { teamId, playerId: addPlayerId, slot: "BENCH" } }),
-    db.transaction.create({
+  const cap = totalRosterSize(league.rosterSlots as RosterSlotsConfig);
+  const dropId = dropEntry?.id;
+
+  // The "already rostered?" and roster-size checks must run inside the same
+  // transaction as the insert, serialized per league — otherwise two teams
+  // claiming the same free agent at once both pass the check and both get him.
+  const failure = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${leagueId}))`;
+
+    const taken = await tx.rosterEntry.findFirst({
+      where: { playerId: addPlayerId, team: { leagueId } },
+    });
+    if (taken) return { status: 409, error: "That player is already on a roster in this league" };
+
+    if (dropId) {
+      const stillThere = await tx.rosterEntry.findUnique({ where: { id: dropId } });
+      if (!stillThere) return { status: 409, error: "That player is no longer on your roster" };
+      await tx.rosterEntry.delete({ where: { id: dropId } });
+    } else if ((await tx.rosterEntry.count({ where: { teamId } })) >= cap) {
+      return { status: 400, error: "Your roster is full — pick a player to drop" };
+    }
+
+    await tx.rosterEntry.create({ data: { teamId, playerId: addPlayerId, slot: "BENCH" } });
+    await tx.transaction.create({
       data: {
         leagueId,
         teamId,
@@ -83,8 +97,10 @@ export async function POST(
         droppedPlayerId: dropPlayerId ?? null,
         resolvedAt: new Date(),
       },
-    }),
-  ]);
+    });
+    return null;
+  });
 
+  if (failure) return NextResponse.json({ error: failure.error }, { status: failure.status });
   return NextResponse.json({ ok: true });
 }

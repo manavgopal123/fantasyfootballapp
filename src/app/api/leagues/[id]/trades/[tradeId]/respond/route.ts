@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getCurrentWeek, isPlayerLocked } from "@/lib/lock";
+import { totalRosterSize, RosterSlotsConfig } from "@/lib/roster-config";
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -24,6 +25,10 @@ export async function POST(
 
   try {
     const result = await db.$transaction(async (tx) => {
+      // Same per-league lock the free-agent add route takes, so roster-size
+      // checks here can't interleave with a concurrent add.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${leagueId}))`;
+
       const league = await tx.league.findUnique({ where: { id: leagueId } });
       if (!league) throw new ApiError(404, "League not found");
 
@@ -68,6 +73,21 @@ export async function POST(
               `${item.player.firstName} ${item.player.lastName}'s game has already started — can't trade them this week`
             );
           }
+        }
+      }
+
+      // An uneven trade (e.g. 1-for-2) must not leave either team over the
+      // roster limit — they'd have to drop someone first.
+      const cap = totalRosterSize(league.rosterSlots as RosterSlotsConfig);
+      for (const teamId of [trade.proposingTeamId, trade.receivingTeamId]) {
+        const sent = trade.items.filter((i) => i.fromTeamId === teamId).length;
+        const received = trade.items.length - sent;
+        const current = await tx.rosterEntry.count({ where: { teamId } });
+        if (current - sent + received > cap) {
+          throw new ApiError(
+            409,
+            `This trade would put a team over the ${cap}-player roster limit — they need to drop a player first`
+          );
         }
       }
 

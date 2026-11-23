@@ -7,10 +7,17 @@ export interface LockRule {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Position of a JS weekday (0=Sun..6=Sat) within the NFL week, which runs
+// Tuesday -> Monday night. Sunday and Monday are the *end* of the week, not
+// the start, so they must sort after Thursday.
+function nflWeekIndex(jsDay: number): number {
+  return (jsDay + 5) % 7;
+}
+
 // Fallback for when we don't have a real kickoff time: is "now" within the
 // locked portion of the recurring weekly cycle defined by (lockDayOfWeek,
 // lockHour)? Evaluated in US Eastern time, the NFL's own scheduling zone —
-// resets automatically each week once we roll past Sunday.
+// stays locked through Monday night, then resets automatically on Tuesday.
 function isPastFallbackDeadline(rule: LockRule, now: Date): boolean {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -20,11 +27,12 @@ function isPastFallbackDeadline(rule: LockRule, now: Date): boolean {
   }).formatToParts(now);
   const weekdayStr = parts.find((p) => p.type === "weekday")!.value;
   const hourStr = parts.find((p) => p.type === "hour")!.value;
-  const currentDay = WEEKDAYS.indexOf(weekdayStr);
+  const currentDay = nflWeekIndex(WEEKDAYS.indexOf(weekdayStr));
+  const lockDay = nflWeekIndex(rule.lockDayOfWeek);
   const currentHour = Number(hourStr) % 24; // Intl can format midnight as "24"
 
-  if (currentDay > rule.lockDayOfWeek) return true;
-  if (currentDay === rule.lockDayOfWeek && currentHour >= rule.lockHour) return true;
+  if (currentDay > lockDay) return true;
+  if (currentDay === lockDay && currentHour >= rule.lockHour) return true;
   return false;
 }
 
